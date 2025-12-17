@@ -283,7 +283,7 @@ export const BlockCalculator = () => {
         {/* Info Card */}
         <Card className="p-4 bg-secondary/50 border-border">
           <p className="text-sm text-muted-foreground text-center">
-            Calculations are based on an average block time of 10 minutes. Actual times may vary.
+            Calculations are based on an average block time of 10 minutes, fast block time of 9.8 minutes, and slow block time of 10.2 minutes. Actual times may vary.
           </p>
         </Card>
       </div>
