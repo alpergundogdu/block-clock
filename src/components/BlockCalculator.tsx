@@ -8,8 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Calendar, Hash, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+const FAST_BLOCK_TIME = 9.5 * 60 * 1000; // 9.5 minutes in milliseconds
 const AVERAGE_BLOCK_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
-const GENESIS_BLOCK_TIMESTAMP = 1231006505000; // Bitcoin genesis block timestamp
+const SLOW_BLOCK_TIME = 10.5 * 60 * 1000; // 10.5 minutes in milliseconds
 
 type NetworkType = "mainnet" | "signet";
 
@@ -17,29 +18,33 @@ export const BlockCalculator = () => {
   const [network, setNetwork] = useState<NetworkType>("mainnet");
   const [currentBlockHeight, setCurrentBlockHeight] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  
+
   // Date to Block states
   const [dateInput, setDateInput] = useState("");
   const [timeInput, setTimeInput] = useState("");
-  const [calculatedBlock, setCalculatedBlock] = useState<number | null>(null);
-  
+  const [calculatedBlock, setCalculatedBlock] = useState<string | null>(null);
+
   // Block to Date states
   const [blockInput, setBlockInput] = useState("");
   const [calculatedDate, setCalculatedDate] = useState<string | null>(null);
-  
+
   const { toast } = useToast();
 
   useEffect(() => {
     fetchCurrentBlock();
+
+    const id = setInterval(fetchCurrentBlock, 30_000);
+
+    return () => clearInterval(id); // avoid interval zombies
   }, [network]);
 
   const fetchCurrentBlock = async () => {
     setLoading(true);
     try {
-      const baseUrl = network === "mainnet" 
-        ? "https://mempool.space/api" 
+      const baseUrl = network === "mainnet"
+        ? "https://mempool.space/api"
         : "https://mempool.space/signet/api";
-      
+
       const response = await fetch(`${baseUrl}/blocks/tip/height`);
       const height = await response.json();
       setCurrentBlockHeight(height);
@@ -67,18 +72,24 @@ export const BlockCalculator = () => {
     const targetDate = new Date(`${dateInput}T${timeInput}`);
     const targetTimestamp = targetDate.getTime();
     const currentTimestamp = Date.now();
-    
+
     if (targetTimestamp > currentTimestamp) {
       // Future date
       const timeDiff = targetTimestamp - currentTimestamp;
       const blocksDiff = Math.round(timeDiff / AVERAGE_BLOCK_TIME);
-      setCalculatedBlock(currentBlockHeight + blocksDiff);
+      const slowBlocksDiff = Math.round(timeDiff / SLOW_BLOCK_TIME);
+      const fastBlocksDiff = Math.round(timeDiff / FAST_BLOCK_TIME);
+
+      let result = "Fast: " + (currentBlockHeight + fastBlocksDiff).toLocaleString() + "\n";
+      result += "Average: " + (currentBlockHeight + blocksDiff).toLocaleString() + "\n";
+      result += "Slow: " + (currentBlockHeight + slowBlocksDiff).toLocaleString();
+      setCalculatedBlock(result);
     } else {
-      // Past date
-      const timeDiff = currentTimestamp - targetTimestamp;
-      const blocksDiff = Math.round(timeDiff / AVERAGE_BLOCK_TIME);
-      const estimatedBlock = currentBlockHeight - blocksDiff;
-      setCalculatedBlock(Math.max(0, estimatedBlock));
+      toast({
+        title: "Invalid input",
+        description: "Please enter a future date and time",
+        variant: "destructive",
+      });
     }
   };
 
@@ -93,11 +104,47 @@ export const BlockCalculator = () => {
     }
 
     const targetBlock = parseInt(blockInput);
+
+    if (targetBlock < currentBlockHeight) {
+      toast({
+        title: "Invalid input",
+        description: "Please enter a block height greater than the current block",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const blockDiff = targetBlock - currentBlockHeight;
     const timeDiff = blockDiff * AVERAGE_BLOCK_TIME;
     const estimatedDate = new Date(Date.now() + timeDiff);
-    
-    setCalculatedDate(estimatedDate.toLocaleString());
+
+    const slowDate = new Date(Date.now() + (blockDiff * SLOW_BLOCK_TIME));
+    const fastDate = new Date(Date.now() + (blockDiff * FAST_BLOCK_TIME));
+
+    setCalculatedDate(
+      "Fast: " + fastDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }) +
+      "\n" +
+      "Average: " + estimatedDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }) +
+      "\n" +
+      "Slow: " + slowDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }));
   };
 
   return (
@@ -175,7 +222,7 @@ export const BlockCalculator = () => {
                   className="bg-background border-border"
                 />
               </div>
-              <Button 
+              <Button
                 onClick={calculateBlockFromDate}
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-glow"
               >
@@ -184,7 +231,14 @@ export const BlockCalculator = () => {
               {calculatedBlock !== null && (
                 <div className="mt-4 p-4 bg-background rounded-lg border border-primary/20">
                   <p className="text-sm text-muted-foreground mb-1">Estimated Block Height</p>
-                  <p className="text-3xl font-bold text-primary">{calculatedBlock.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-primary">{
+                    calculatedBlock.split("\n").map((line, index) => (
+                      <span key={index}>
+                        {line}
+                        <br />
+                      </span>
+                    ))
+                  }</p>
                 </div>
               )}
             </Card>
@@ -203,7 +257,7 @@ export const BlockCalculator = () => {
                   className="bg-background border-border"
                 />
               </div>
-              <Button 
+              <Button
                 onClick={calculateDateFromBlock}
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-glow"
               >
@@ -212,7 +266,14 @@ export const BlockCalculator = () => {
               {calculatedDate && (
                 <div className="mt-4 p-4 bg-background rounded-lg border border-primary/20">
                   <p className="text-sm text-muted-foreground mb-1">Estimated Date & Time</p>
-                  <p className="text-2xl font-bold text-primary">{calculatedDate}</p>
+                  <p className="text-2xl font-bold text-primary">{
+                    calculatedDate.split("\n").map((line, index) => (
+                      <span key={index}>
+                        {line}
+                        <br />
+                      </span>
+                    ))
+                  }</p>
                 </div>
               )}
             </Card>
